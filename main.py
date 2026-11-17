@@ -67,7 +67,7 @@ CSS = "body{font-family:Arial;background:#0a0e1a;color:white;margin:0;padding:12
 
 HOME = """
 <!DOCTYPE html><html><head><title>Wletit Broker PRO</title><meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="manifest" href="/manifest.json"><script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="manifest" href="/manifest.json"><script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js')}</script>
 <style>__CSS__</style></head><body>
 <div class="top"><div class="logo">WLETIT <span>BROKER</span> PRO</div>
