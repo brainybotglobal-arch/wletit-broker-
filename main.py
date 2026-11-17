@@ -7,7 +7,7 @@ app.secret_key = os.environ.get("SECRET_KEY", "wletit-secret-123")
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 USE_PG = bool(DATABASE_URL)
 lock = threading.Lock()
-market = {"EURUSD": 1.0850, "GBPUSD": 1.2700, "USDJPY": 149.50, "XAUUSD": 2350.00, "BTCUSD": 97000.00, "ETHUSD": 3400.00, "SOLUSD": 170.00, "DOGEUSD": 0.16, "AAPL": 210.50, "TSLA": 250.00, "NVDA": 880.00, "AMZN": 195.00}
+market = {"EURUSD": 1.0850, "GBPUSD": 1.2700, "USDJPY": 149.50, "XAUUSD": 2350.00, "BTCUSD": 63700.00, "ETHUSD": 2100.00, "SOLUSD": 170.00, "DOGEUSD": 0.16, "AAPL": 210.50, "TSLA": 250.00, "NVDA": 880.00, "AMZN": 195.00}
 history_data = {sym: [price] for sym, price in market.items()}
 
 def get_con():
@@ -61,15 +61,22 @@ def create_user(username, password, full_name="", email=""):
         con.commit(); return True
     except: return False
     finally: con.close()
-init_db()
-def fetch_real_prices():
+init_db()def fetch_real_prices():
+    # Use 【entity-Coinbase¦canonical_name=Coinbase】 - works on Render, Binance is blocked
     try:
-        with urllib.request.urlopen("https://api.binance.com/api/v3/ticker/price?symbols=%5B%22BTCUSDT%22,%22ETHUSDT%22,%22SOLUSDT%22,%22DOGEUSDT%22%5D", timeout=5) as r:
-            data = json.loads(r.read()); mp = {d["symbol"]: float(d["price"]) for d in data}
-            market["BTCUSD"] = round(mp.get("BTCUSDT", market["BTCUSD"]), 2)
-            market["ETHUSD"] = round(mp.get("ETHUSDT", market["ETHUSD"]), 2)
-            market["SOLUSD"] = round(mp.get("SOLUSDT", market["SOLUSD"]), 2)
-            market["DOGEUSD"] = round(mp.get("DOGEUSDT", market["DOGEUSD"]), 4)
+        # 【entity-Coinbase¦canonical_name=Coinbase】 is free, no key needed
+        import urllib.request, json as js
+        for sym, coin in [("BTCUSD","BTC"), ("ETHUSD","ETH"), ("SOLUSD","SOL"), ("DOGEUSD","DOGE")]:
+            try:
+                url = f"https://api.coinbase.com/v2/prices/{coin}-USD/spot"
+                with urllib.request.urlopen(url, timeout=5) as r:
+                    data = js.loads(r.read())
+                    market[sym] = round(float(data["data"]["amount"]), 4)
+            except:
+                pass
+        # For stocks/forex, keep small random move (they are not crypto)
+        for sym in ["EURUSD","GBPUSD","USDJPY","XAUUSD","AAPL","TSLA","NVDA","AMZN"]:
+            market[sym] = round(market[sym] * (1 + random.uniform(-0.0005, 0.0005)), 4)
     except:
         for sym in market: market[sym] = round(market[sym] * (1 + random.uniform(-0.001, 0.001)), 4)
     for sym, price in market.items():
