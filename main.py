@@ -115,27 +115,27 @@ function selectCoin(sym) {
   selected = sym;
   document.getElementById("tradeSym").innerText = sym;
   document.getElementById("symbolInput").value = sym;
-  loadChart();
-  loadPrices();
-}
+let candleChart = null;
+let candleSeries = null;
 async function loadChart() {
-  let c = document.getElementById("myChart");
-  if (!c) return;
-  let res = await fetch("/api/chart/" + selected);
-  let data = await res.json();
-  if (chart) chart.destroy();
-  chart = new Chart(c, {
-    type: "line",
-    data: {
-      labels: data.map(function(_, i){ return i+1; }),
-      datasets: [{ label: selected, data: data, borderColor: "#22c55e", backgroundColor: "rgba(34,197,94,0.15)", fill: true, tension: 0.4, pointRadius: 0 }]
-    },
-    options: { plugins: { legend: { labels: { color: "white" } } }, scales: { x: { ticks: { color: "#94a3b8" } }, y: { ticks: { color: "white" } } } }
-  });
+  let el = document.getElementById("myChart");
+  if (!el) return;
+  // Get real candles from Binance
+  let symMap = { "BTCUSD": "BTCUSDT", "ETHUSD": "ETHUSDT", "SOLUSD": "SOLUSDT", "DOGEUSD": "DOGEUSDT" };
+  let binSym = symMap[selected] || "BTCUSDT";
+  try {
+    let res = await fetch("https://api.binance.com/api/v3/klines?symbol=" + binSym + "&interval=1m&limit=30");
+    let klines = await res.json();
+    let data = klines.map(k => ({ time: Math.floor(k[0]/1000), open: parseFloat(k[1]), high: parseFloat(k[2]), low: parseFloat(k[3]), close: parseFloat(k[4]) }));
+    if (!candleChart) {
+      candleChart = LightweightCharts.createChart(el, { layout: { background: { color: "#0f1626" }, textColor: "white" }, grid: { vertLines: { color: "#26314d" }, horzLines: { color: "#26314d" } }, width: el.clientWidth, height: 280 });
+      candleSeries = candleChart.addCandlestickSeries({ upColor: "#22c55e", downColor: "#ef4444", wickUpColor: "#22c55e", wickDownColor: "#ef4444" });
+    }
+    candleSeries.setData(data);
+  } catch(e) {
+    console.log("candle failed", e);
+  }
 }
-loadPrices();
-loadChart();
-setInterval(function(){ loadPrices(); loadChart(); }, 5000);
 </script>
 </body></html>
 """
