@@ -77,7 +77,7 @@ HOME = """
 <form method="POST" action="/login"><input name="username" placeholder="Username" required><input name="password" type="password" placeholder="Password" required><button>Login</button></form>
 <p>New? <a href="/register">Create account - Get $10,000 demo</a></p></div>
 {% else %}
-<div class="card"><h3>BTCUSD - Live</h3><canvas id="myChart" height="110"></canvas><p class="small">KYC: {{ kyc }} - <a href="/settings">Complete verification</a></p></div>
+<div class="card"><h3>BTCUSD - Live</h3><div id="myChart" style="height:280px; background:#0f1626; border-radius:12px;"></div><p class="small">KYC: {{ kyc }} - <a href="/settings">Complete verification</a></p></div>
 <div class="grid"><div class="card"><h3>Markets</h3><div class="price-grid" id="markets"><p>Loading markets...</p></div></div>
 <div class="card"><h3>Trade - <span id="tradeSym">BTCUSD</span></h3><p>Welcome, <b>{{ full_name }}</b></p>
 <div><b>Positions:</b><br>{% for p in pnl_rows %}{{ p.sym }}: {{ p.qty }} | Entry ${{ p.entry }} -> Now ${{ p.cur }} | PnL ${{ p.pnl }}<br>{% else %}No positions yet.{% endfor %}<br><b>Total PnL: ${{ total_pnl }}</b></div>
