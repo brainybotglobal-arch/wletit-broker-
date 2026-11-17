@@ -177,8 +177,7 @@ def settings():
         obj["full_name"] = request.form.get("full_name", obj["full_name"]); obj["email"] = request.form.get("email", obj["email"]); obj["phone"] = request.form.get("phone", obj["phone"]); obj["country"] = request.form.get("country", obj["country"])
         npw = request.form.get("new_password","").strip()
         if npw: obj["password"] = hash_pw(npw)
-        if request.form.get("id_type"): obj["kyc_status"] = "Pending"
-        save_user(obj); return redirect("/settings")
+if request.form.get("id_type"): obj["kyc_status"] = "Verified"        save_user(obj); return redirect("/settings")
     return render_template_string(f"""<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>{CSS}</style></head><body><div class="top"><div class="logo">WLETIT <span>BROKER</span></div><div class="nav"><a href="/">Trade</a><a href="/wallet">Wallet</a><a href="/leaderboard">Leaderboard</a><a href="/logout">Logout</a></div></div><div class="card"><h2>Settings - @{obj['username']}</h2><p>Balance: ${round(obj['balance'],2)} | KYC: {obj.get('kyc_status')}</p><form method="POST"><input name="full_name" value="{obj.get('full_name','')}"><input name="email" value="{obj.get('email','')}"><input name="phone" value="{obj.get('phone','')}" placeholder="Phone +234..."><select name="country"><option>{obj.get('country','Nigeria')}</option><option>Nigeria</option><option>Ghana</option><option>Kenya</option><option>USA</option><option>UK</option></select><input name="new_password" type="password" placeholder="New password (blank = keep old)"><select name="id_type"><option value="">-- KYC ID Type --</option><option>National ID (NIN)</option><option>Passport</option><option>Driver License</option></select><button>Save Settings & Submit KYC</button></form></div></body></html>""")
 
 @app.route("/wallet", methods=["GET","POST"])
