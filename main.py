@@ -124,16 +124,28 @@ def fetch_real_prices():
 def get_pnl(user_obj):
     total = 0
     rows = []
-    for sym, pos in user_obj["portfolio"].items():
-        cur = market.get(sym, pos["entry"])
-        pnl = round((cur - pos["entry"]) * pos["qty"] * 100, 2)
-        total += pnl
-        sl_val = 0
-        tp_val = 0
-        if isinstance(pos, dict):
-            sl_val = pos.get("sl", 0) or 0
-            tp_val = pos.get("tp", 0) or 0
-        rows.append({"sym": sym, "qty": pos["qty"], "entry": pos["entry"], "cur": cur, "pnl": pnl, "sl": sl_val, "tp": tp_val})
+    try:
+        portfolio = user_obj.get("portfolio") or {}
+        for sym, pos in portfolio.items():
+            try:
+                if not isinstance(pos, dict):
+                    continue
+                entry = pos.get("entry", 0) or 0
+                qty = pos.get("qty", 0) or 0
+                side = pos.get("side", "buy") or "buy"
+                cur = market.get(sym, entry)
+                if side == "sell":
+                    pnl = round((entry - cur) * qty * 100, 2)
+                else:
+                    pnl = round((cur - entry) * qty * 100, 2)
+                total += pnl
+                sl_val = pos.get("sl", 0) or 0
+                tp_val = pos.get("tp", 0) or 0
+                rows.append({"sym": sym, "qty": qty, "entry": entry, "cur": cur, "pnl": pnl, "sl": sl_val, "tp": tp_val, "side": side})
+            except:
+                continue
+    except:
+        pass
     return rows, round(total, 2)
 CSS = "body{font-family:Arial;background:#0a0e1a;color:white;margin:0;padding:12px} .top{max-width:1100px;margin:auto;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap} .logo{font-size:22px;font-weight:800} .logo span{color:#22c55e} .nav a{color:white;margin-left:12px;text-decoration:none} .card{background:#151c2e;padding:16px;border-radius:16px;max-width:1100px;margin:12px auto;border:1px solid #26314d} .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px} @media(max-width:750px){.grid{grid-template-columns:1fr}} .price-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(125px,1fr));gap:9px} .coin{background:#0f1626;padding:11px;border-radius:12px;cursor:pointer;border:2px solid transparent} .coin.active{border-color:#22c55e} .up{color:#22c55e} .down{color:#ef4444} input,select,button{padding:12px;margin:5px 0;border-radius:10px;border:none;width:100%} button{background:#22c55e;color:white;cursor:pointer;font-weight:800} .sell{background:#ef4444} .row{display:flex;gap:10px} .row button{flex:1} .small{color:#94a3b8;font-size:13px} a{color:#60a5fa}"
 HOME = """
@@ -151,7 +163,7 @@ HOME = """
 <div class="card"><h3><span id="chartSym">BTCUSD</span> - Candlestick Live 🕯️</h3><div id="myChart" style="height:300px;background:#0f1626;border-radius:12px;"></div><p class="small">Green = up, Red = down. Real 【entity-Binance¦canonical_name=Binance】 candles. KYC: {{ kyc }} - <a href="/settings">Settings</a></p></div>
 <div class="grid"><div class="card"><h3>Markets</h3><div class="price-grid" id="markets"><p>Loading...</p></div></div>
 <div class="card"><h3>Trade - <span id="tradeSym">BTCUSD</span></h3><p>Welcome, <b>{{ full_name }}</b></p>
-<div><b>Positions:</b><br>{% for p in pnl_rows %}{{ p.sym }}: {{ p.qty }} | Entry ${{ p.entry }} -> Now ${{ p.cur }} | PnL ${{ p.pnl }} | SL ${{ p.sl }} TP ${{ p.tp }}<br>{% else %}No positions yet.{% endfor %}<br><b>Total PnL: ${{ total_pnl }}</b></div>
+<div><b>Positions:</b><br>{% for p in pnl_rows %}{{ p.side.upper() }} {{ p.sym }}: {{ p.qty }} | Entry ${{ p.entry }} -> Now ${{ p.cur }} | PnL ${{ p.pnl }} | SL ${{ p.sl }} TP ${{ p.tp }}<br>{% else %}No positions yet.{% endfor %}<br><b>Total PnL: ${{ total_pnl }}</b></div>
 <form method="POST" action="/trade">
   <input type="hidden" name="symbol" id="symbolInput" value="BTCUSD">
   <input name="lot" type="number" step="0.01" value="0.1" required placeholder="Lot size e.g. 0.1">
@@ -274,6 +286,13 @@ def login():
     return redirect("/")
 @app.route("/trade", methods=["POST"])
 def check_user_sl_tp(user_obj):
+    try:
+        return _check_sl_tp_real(user_obj)
+    except Exception as e:
+        print("SL/TP check failed:", e)
+        return False
+
+def _check_sl_tp_real(user_obj):
     changed = False
     to_close = []
     for sym, pos in list(user_obj["portfolio"].items()):
@@ -284,17 +303,29 @@ def check_user_sl_tp(user_obj):
             continue
         sl = pos.get("sl", 0) or 0
         tp = pos.get("tp", 0) or 0
+        side = pos.get("side", "buy") or "buy"
         hit = None
-        if sl > 0 and cur <= sl:
-            hit = "STOP LOSS HIT"
-        elif tp > 0 and cur >= tp:
-            hit = "TAKE PROFIT HIT"
+        if side == "sell":
+            # SHORT: SL above entry, TP below entry
+            if sl > 0 and cur >= sl:
+                hit = "STOP LOSS HIT"
+            elif tp > 0 and cur <= tp:
+                hit = "TAKE PROFIT HIT"
+        else:
+            # LONG: SL below entry, TP above entry
+            if sl > 0 and cur <= sl:
+                hit = "STOP LOSS HIT"
+            elif tp > 0 and cur >= tp:
+                hit = "TAKE PROFIT HIT"
         if hit:
             qty = pos["qty"]
-            pnl = round((cur - pos["entry"]) * qty * 100, 2)
+            if side == "sell":
+                pnl = round((pos["entry"] - cur) * qty * 100, 2)
+            else:
+                pnl = round((cur - pos["entry"]) * qty * 100, 2)
             user_obj["balance"] += (qty * pos["entry"] * 100) / 100 + pnl
             to_close.append(sym)
-            user_obj["history"].append(f"{hit} - AUTO SELL {qty} {sym} @ {cur} | PnL ${pnl} | SL:{sl} TP:{tp}")
+            user_obj["history"].append(f"{hit} - AUTO CLOSE {side.upper()} {qty} {sym} @ {cur} | PnL ${pnl} | SL:{sl} TP:{tp}")
             changed = True
     for sym in to_close:
         del user_obj["portfolio"][sym]
@@ -320,37 +351,49 @@ def trade():
         tp = float(request.form.get("tp", "") or 0)
     except:
         tp = 0
-    if action == "buy":
-        if user["balance"] < cost:
-            user["history"].append("FAILED BUY - Not enough balance")
-        else:
-            user["balance"] -= cost
-            old = user["portfolio"].get(symbol, {"qty": 0, "entry": price})
+    if user["balance"] < cost:
+        user["history"].append("FAILED TRADE - Not enough balance")
+        save_user(user)
+        return redirect("/")
+    user["balance"] -= cost
+    old = user["portfolio"].get(symbol)
+    # If no position, open new one in this direction
+    if not old:
+        user["portfolio"][symbol] = {"qty": round(lot, 4), "entry": round(price, 4), "sl": sl, "tp": tp, "side": action}
+        user["history"].append(f"OPEN {action.upper()} {lot} {symbol} @ {price} Lev x{leverage} SL:{sl} TP:{tp}")
+    else:
+        # If same direction, add to it
+        if old.get("side", "buy") == action:
             new_qty = old["qty"] + lot
             if new_qty:
                 avg = (old["qty"] * old["entry"] + lot * price) / new_qty
             else:
                 avg = price
-            old_sl = 0
-            old_tp = 0
-            if isinstance(old, dict):
-                old_sl = old.get("sl", 0) or 0
-                old_tp = old.get("tp", 0) or 0
+            old_sl = old.get("sl", 0) or 0
+            old_tp = old.get("tp", 0) or 0
             new_sl = sl if sl > 0 else old_sl
             new_tp = tp if tp > 0 else old_tp
-            user["portfolio"][symbol] = {"qty": round(new_qty, 4), "entry": round(avg, 4), "sl": new_sl, "tp": new_tp}
-            user["history"].append(f"BUY {lot} {symbol} @ {price} Lev x{leverage} SL:{new_sl} TP:{new_tp}")
-    else:
-        pos = user["portfolio"].get(symbol)
-        if not pos or pos["qty"] < lot:
-            user["history"].append("FAILED SELL - No position")
+            user["portfolio"][symbol] = {"qty": round(new_qty, 4), "entry": round(avg, 4), "sl": new_sl, "tp": new_tp, "side": action}
+            user["history"].append(f"ADD {action.upper()} {lot} {symbol} @ {price} Lev x{leverage} SL:{new_sl} TP:{new_tp}")
         else:
-            pnl = round((price - pos["entry"]) * lot * 100, 2)
-            user["balance"] += cost + pnl
-            pos["qty"] = round(pos["qty"] - lot, 4)
-            if pos["qty"] <= 0:
+            # Opposite direction - close the old position
+            old_side = old.get("side", "buy")
+            if old_side == "buy":
+                pnl = round((price - old["entry"]) * lot * 100, 2)
+            else:
+                pnl = round((old["entry"] - price) * lot * 100, 2)
+            # Use min lot so we don't over-close
+            close_qty = min(lot, old["qty"])
+            user["balance"] += (close_qty * price * 100) / leverage + pnl
+            # Refund remaining cost difference - keep simple: add pnl
+            user["balance"] += 0
+            remaining = round(old["qty"] - close_qty, 4)
+            if remaining <= 0:
                 del user["portfolio"][symbol]
-            user["history"].append(f"SELL {lot} {symbol} @ {price} Lev x{leverage} | PnL ${pnl}")
+                user["history"].append(f"CLOSE {old_side.upper()} {close_qty} {symbol} @ {price} | PnL ${pnl}")
+            else:
+                old["qty"] = remaining
+                user["history"].append(f"PARTIAL CLOSE {old_side.upper()} {close_qty} {symbol} @ {price} | PnL ${pnl}")
     save_user(user)
     return redirect("/")
 @app.route("/logout")
