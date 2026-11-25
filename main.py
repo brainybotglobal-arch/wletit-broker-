@@ -296,12 +296,7 @@ def trade():
             if pos["qty"]<=0: del user["portfolio"][symbol]
             user["history"].append(f"SELL {lot} {symbol} @ {price} Lev x{leverage} | PnL ${pnl}")
     save_user(user); return redirect("/") 
-    def check_sl_tp():
-    # Runs on every price update - closes positions that hit SL or TP
-    # We need to check all users - simple version: check current logged-in user only via api_prices
-    pass
-
-def check_user_sl_tp(user_obj):
+   def check_user_sl_tp(user_obj):
     changed = False
     to_close = []
     for sym, pos in list(user_obj["portfolio"].items()):
