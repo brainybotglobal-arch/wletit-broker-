@@ -57,29 +57,42 @@ def create_user(username, password, full_name="", email=""):
     finally: con.close()
 init_db()
 def fetch_real_prices():
-    # Try CoinGecko FIRST - most reliable on Render
-    updated = False
+    # Use 【entity-Binance¦canonical_name=Binance】 - SAME as chart, so they can never disagree again
     try:
-        with urllib.request.urlopen("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana,dogecoin&vs_currencies=usd", timeout=8) as r:
+        # 【entity-Binance¦canonical_name=Binance】 gives BTC, ETH, SOL, DOGE in one call
+        with urllib.request.urlopen("https://api.binance.com/api/v3/ticker/price?symbols=[\"BTCUSDT\",\"ETHUSDT\",\"SOLUSDT\",\"DOGEUSDT\"]", timeout=8) as r:
             data = json.loads(r.read())
-            if "bitcoin" in data: market["BTCUSD"] = round(float(data["bitcoin"]["usd"]), 2); updated = True
-            if "ethereum" in data: market["ETHUSD"] = round(float(data["ethereum"]["usd"]), 2)
-            if "solana" in data: market["SOLUSD"] = round(float(data["solana"]["usd"]), 2)
-            if "dogecoin" in data: market["DOGEUSD"] = round(float(data["dogecoin"]["usd"]), 4)
+            for item in data:
+                sym = item["symbol"]
+                price = float(item["price"])
+                if sym == "BTCUSDT":
+                    market["BTCUSD"] = round(price, 2)
+                elif sym == "ETHUSDT":
+                    market["ETHUSD"] = round(price, 2)
+                elif sym == "SOLUSDT":
+                    market["SOLUSD"] = round(price, 2)
+                elif sym == "DOGEUSDT":
+                    market["DOGEUSD"] = round(price, 4)
+            print("Binance OK - BTC:", market["BTCUSD"])
     except Exception as e:
-        print("CoinGecko failed:", e)
-    # Fallback to 【entity-Coinbase¦canonical_name=Coinbase】 if CoinGecko fails
-    if not updated:
+        print("【entity-Binance¦canonical_name=Binance】 failed:", e)
+        # Backup: Try 【entity-Coinbase¦canonical_name=Coinbase】 for BTC only
         try:
             with urllib.request.urlopen("https://api.coinbase.com/v2/prices/BTC-USD/spot", timeout=5) as r:
-                data = json.loads(r.read()); market["BTCUSD"] = round(float(data["data"]["amount"]), 2)
-        except: pass
+                data = json.loads(r.read())
+                market["BTCUSD"] = round(float(data["data"]["amount"]), 2)
+        except Exception as e2:
+            print("【entity-Coinbase¦canonical_name=Coinbase】 also failed:", e2)
+            # Last resort: keep current price, DO NOT reset to 97000
+            pass
+
     # Small random for non-crypto only
-    for sym in ["EURUSD","GBPUSD","USDJPY","XAUUSD","AAPL","TSLA","NVDA","【entity-AMZN¦canonical_name=AMZN】"]:
+    for sym in ["EURUSD","GBPUSD","USDJPY","XAUUSD","AAPL","TSLA","NVDA"," 【entity-AMZN¦canonical_name=AMZN】"]:
         market[sym] = round(market[sym] * (1 + random.uniform(-0.0005, 0.0005)), 4)
     for sym, price in market.items():
         history_data[sym].append(price)
-        if len(history_data[sym]) > 40: history_data[sym].pop(0)
+        if len(history_data[sym]) > 40:
+            history_data[sym].pop(0)
 def get_pnl(user_obj):
     total=0; rows=[]
     for sym, pos in user_obj["portfolio"].items():
