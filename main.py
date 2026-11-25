@@ -151,7 +151,7 @@ HOME = """
 <div class="card"><h3><span id="chartSym">BTCUSD</span> - Candlestick Live 🕯️</h3><div id="myChart" style="height:300px;background:#0f1626;border-radius:12px;"></div><p class="small">Green = up, Red = down. Real 【entity-Binance¦canonical_name=Binance】 candles. KYC: {{ kyc }} - <a href="/settings">Settings</a></p></div>
 <div class="grid"><div class="card"><h3>Markets</h3><div class="price-grid" id="markets"><p>Loading...</p></div></div>
 <div class="card"><h3>Trade - <span id="tradeSym">BTCUSD</span></h3><p>Welcome, <b>{{ full_name }}</b></p>
-<div><b>Positions:</b><br>{% for p in pnl_rows %}{{ p.sym }}: {{ p.qty }} | Entry ${{ p.entry }} -> Now ${{ p.cur }} | PnL ${{ p.pnl }} | SL ${{ p.sl }} TP ${{ p.tp }}
+<div><b>Positions:</b><br>{% for p in pnl_rows %}{{ p.sym }}: {{ p.qty }} | Entry ${{ p.entry }} -> Now ${{ p.cur }} | PnL ${{ p.pnl }} | SL ${{ p.sl }} TP ${{ p.tp }}<br>{% else %}No positions yet.{% endfor %}<br><b>Total PnL: ${{ total_pnl }}</b></div>
 <form method="POST" action="/trade">
   <input type="hidden" name="symbol" id="symbolInput" value="BTCUSD">
   <input name="lot" type="number" step="0.01" value="0.1" required placeholder="Lot size e.g. 0.1">
