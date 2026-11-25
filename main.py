@@ -284,8 +284,9 @@ def login():
         if obj["password"] == request.form["password"]: obj["password"]=hash_pw(request.form["password"]); save_user(obj)
         session["user"] = request.form["username"]
     return redirect("/")
-@app.route("/trade", methods=["POST"])
-def check_user_sl_tp(user_obj):
+def check_user_sl_tp(user_obj=None):
+    if user_obj is None:
+        return False
     try:
         return _check_sl_tp_real(user_obj)
     except Exception as e:
@@ -294,43 +295,7 @@ def check_user_sl_tp(user_obj):
 
 def _check_sl_tp_real(user_obj):
     changed = False
-    to_close = []
-    for sym, pos in list(user_obj["portfolio"].items()):
-        if not isinstance(pos, dict):
-            continue
-        cur = market.get(sym)
-        if not cur:
-            continue
-        sl = pos.get("sl", 0) or 0
-        tp = pos.get("tp", 0) or 0
-        side = pos.get("side", "buy") or "buy"
-        hit = None
-        if side == "sell":
-            # SHORT: SL above entry, TP below entry
-            if sl > 0 and cur >= sl:
-                hit = "STOP LOSS HIT"
-            elif tp > 0 and cur <= tp:
-                hit = "TAKE PROFIT HIT"
-        else:
-            # LONG: SL below entry, TP above entry
-            if sl > 0 and cur <= sl:
-                hit = "STOP LOSS HIT"
-            elif tp > 0 and cur >= tp:
-                hit = "TAKE PROFIT HIT"
-        if hit:
-            qty = pos["qty"]
-            if side == "sell":
-                pnl = round((pos["entry"] - cur) * qty * 100, 2)
-            else:
-                pnl = round((cur - pos["entry"]) * qty * 100, 2)
-            user_obj["balance"] += (qty * pos["entry"] * 100) / 100 + pnl
-            to_close.append(sym)
-            user_obj["history"].append(f"{hit} - AUTO CLOSE {side.upper()} {qty} {sym} @ {cur} | PnL ${pnl} | SL:{sl} TP:{tp}")
-            changed = True
-    for sym in to_close:
-        del user_obj["portfolio"][sym]
-    return changed
-
+    ...
 @app.route("/trade", methods=["POST"])
 def trade():
     u = session.get("user")
