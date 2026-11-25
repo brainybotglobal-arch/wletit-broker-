@@ -57,37 +57,39 @@ def create_user(username, password, full_name="", email=""):
     finally: con.close()
 init_db()
 def fetch_real_prices():
-    # Use 【entity-Binance¦canonical_name=Binance】 - SAME as chart, so they can never disagree again
-    try:
-        # 【entity-Binance¦canonical_name=Binance】 gives BTC, ETH, SOL, DOGE in one call
-        with urllib.request.urlopen("https://api.binance.com/api/v3/ticker/price?symbols=[\"BTCUSDT\",\"ETHUSDT\",\"SOLUSDT\",\"DOGEUSDT\"]", timeout=8) as r:
-            data = json.loads(r.read())
-            for item in data:
-                sym = item["symbol"]
-                price = float(item["price"])
-                if sym == "BTCUSDT":
-                    market["BTCUSD"] = round(price, 2)
-                elif sym == "ETHUSDT":
-                    market["ETHUSD"] = round(price, 2)
-                elif sym == "SOLUSDT":
-                    market["SOLUSD"] = round(price, 2)
-                elif sym == "DOGEUSDT":
-                    market["DOGEUSD"] = round(price, 4)
-            print("Binance OK - BTC:", market["BTCUSD"])
-    except Exception as e:
-        print("【entity-Binance¦canonical_name=Binance】 failed:", e)
-        # Backup: Try 【entity-Coinbase¦canonical_name=Coinbase】 for BTC only
+    # Simple Binance - one coin at a time, same style as chart
+    def get_binance(sym):
+        try:
+            url = "https://api.binance.com/api/v3/ticker/price?symbol=" + sym
+            with urllib.request.urlopen(url, timeout=5) as r:
+                data = json.loads(r.read())
+                return float(data["price"])
+        except Exception as e:
+            print("Binance fail", sym, e)
+            return None
+
+    btc = get_binance("BTCUSDT")
+    if btc:
+        market["BTCUSD"] = round(btc, 2)
+        print("Binance OK - BTC:", market["BTCUSD"])
+    else:
+        # If Binance fails, try 【entity-Coinbase¦canonical_name=Coinbase】 for BTC only
         try:
             with urllib.request.urlopen("https://api.coinbase.com/v2/prices/BTC-USD/spot", timeout=5) as r:
                 data = json.loads(r.read())
                 market["BTCUSD"] = round(float(data["data"]["amount"]), 2)
         except Exception as e2:
-            print("【entity-Coinbase¦canonical_name=Coinbase】 also failed:", e2)
-            # Last resort: keep current price, DO NOT reset to 97000
-            pass
+            print("Coinbase also failed:", e2)
+
+    eth = get_binance("ETHUSDT")
+    if eth: market["ETHUSD"] = round(eth, 2)
+    sol = get_binance("SOLUSDT")
+    if sol: market["SOLUSD"] = round(sol, 2)
+    doge = get_binance("DOGEUSDT")
+    if doge: market["DOGEUSD"] = round(doge, 4)
 
     # Small random for non-crypto only
-    for sym in ["EURUSD","GBPUSD","USDJPY","XAUUSD","AAPL","TSLA","NVDA"," 【entity-AMZN¦canonical_name=AMZN】"]:
+    for sym in ["EURUSD","GBPUSD","USDJPY","XAUUSD","AAPL","TSLA","NVDA"," AMZN"]:
         market[sym] = round(market[sym] * (1 + random.uniform(-0.0005, 0.0005)), 4)
     for sym, price in market.items():
         history_data[sym].append(price)
