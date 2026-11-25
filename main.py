@@ -8,7 +8,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "")
 USE_PG = bool(DATABASE_URL)
 lock = threading.Lock()
 # FIXED STARTING PRICES - REAL Nov 2026 prices
-market = {"EURUSD": 1.0850, "GBPUSD": 1.2700, "USDJPY": 149.50, "XAUUSD": 2350.00, "BTCUSD": 63700.00, "ETHUSD": 2100.00, "SOLUSD": 120.00, "DOGEUSD": 0.11, "AAPL": 212.00, "TSLA": 250.00, "NVDA": 880.00, "【entity-AMZN¦canonical_name=AMZN】": 195.00}
+market = {"EURUSD": 1.0850, "GBPUSD": 1.2700, "USDJPY": 149.50, "XAUUSD": 2350.00, "BTCUSD": 63700.00, "ETHUSD": 2100.00, "SOLUSD": 120.00, "DOGEUSD": 0.11, "AAPL": 212.00, "TSLA": 250.00, "NVDA": 880.00, "AMZN": 195.00}
 history_data = {sym: [price] for sym, price in market.items()}
 def get_con():
     if USE_PG:
@@ -57,42 +57,68 @@ def create_user(username, password, full_name="", email=""):
     finally: con.close()
 init_db()
 def fetch_real_prices():
-    # Simple Binance - one coin at a time, same style as chart
-    def get_binance(sym):
+    # Kraken works on Render US - Binance is blocked (451)
+    def get_kraken(pair, kraken_key):
         try:
-            url = "https://api.binance.com/api/v3/ticker/price?symbol=" + sym
+            url = "https://api.kraken.com/0/public/Ticker?pair=" + pair
+            with urllib.request.urlopen(url, timeout=6) as r:
+                data = json.loads(r.read())
+                # Kraken returns e.g. XXBTZUSD
+                result = data.get("result", {})
+                for k, v in result.items():
+                    # v['c'] = last trade closed price [price, lot]
+                    return float(v["c"][0])
+        except Exception as e:
+            print("Kraken fail", pair, e)
+            return None
+        return None
+
+    def get_coinbase(sym):
+        # Backup: Coinbase spot price
+        try:
+            url = "https://api.coinbase.com/v2/prices/" + sym + "-USD/spot"
             with urllib.request.urlopen(url, timeout=5) as r:
                 data = json.loads(r.read())
-                return float(data["price"])
+                return float(data["data"]["amount"])
         except Exception as e:
-            print("Binance fail", sym, e)
+            print("Coinbase fail", sym, e)
             return None
 
-    btc = get_binance("BTCUSDT")
+    # BTC
+    btc = get_kraken("XBTUSD", "")
+    if not btc:
+        btc = get_coinbase("BTC")
     if btc:
         market["BTCUSD"] = round(btc, 2)
-        print("Binance OK - BTC:", market["BTCUSD"])
-    else:
-        # If Binance fails, try 【entity-Coinbase¦canonical_name=Coinbase】 for BTC only
-        try:
-            with urllib.request.urlopen("https://api.coinbase.com/v2/prices/BTC-USD/spot", timeout=5) as r:
-                data = json.loads(r.read())
-                market["BTCUSD"] = round(float(data["data"]["amount"]), 2)
-        except Exception as e2:
-            print("Coinbase also failed:", e2)
+        print("PRICE OK - BTC:", market["BTCUSD"])
 
-    eth = get_binance("ETHUSDT")
-    if eth: market["ETHUSD"] = round(eth, 2)
-    sol = get_binance("SOLUSDT")
-    if sol: market["SOLUSD"] = round(sol, 2)
-    doge = get_binance("DOGEUSDT")
-    if doge: market["DOGEUSD"] = round(doge, 4)
+    # ETH
+    eth = get_kraken("ETHUSD", "")
+    if not eth:
+        eth = get_coinbase("ETH")
+    if eth:
+        market["ETHUSD"] = round(eth, 2)
 
-    # Small random for non-crypto only
-    for sym in ["EURUSD","GBPUSD","USDJPY","XAUUSD","AAPL","TSLA","NVDA"," AMZN"]:
-        market[sym] = round(market[sym] * (1 + random.uniform(-0.0005, 0.0005)), 4)
-    for sym, price in market.items():
-        history_data[sym].append(price)
+    # SOL
+    sol = get_kraken("SOLUSD", "")
+    if not sol:
+        sol = get_coinbase("SOL")
+    if sol:
+        market["SOLUSD"] = round(sol, 2)
+
+    # DOGE
+    doge = get_kraken("DOGEUSD", "")
+    if not doge:
+        doge = get_coinbase("DOGE")
+    if doge:
+        market["DOGEUSD"] = round(doge, 4)
+
+    # Small random for non-crypto only - NO SPACE in 【entity-AMZN¦canonical_name=AMZN】
+    for sym in ["EURUSD","GBPUSD","USDJPY","XAUUSD","AAPL","TSLA","NVDA","AMZN"]:
+        if sym in market:
+            market[sym] = round(market[sym] * (1 + random.uniform(-0.0005, 0.0005)), 4)
+    for sym, price in list(market.items()):
+        history_data.setdefault(sym, []).append(price)
         if len(history_data[sym]) > 40:
             history_data[sym].pop(0)
 def get_pnl(user_obj):
