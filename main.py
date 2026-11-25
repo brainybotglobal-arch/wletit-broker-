@@ -42,7 +42,20 @@ def get_user(username):
     cur.execute(q("SELECT * FROM users WHERE username=?"), (username,))
     row = cur.fetchone(); con.close()
     if not row: return None
-    d = dict(row); d["portfolio"] = json.loads(d["portfolio"] or "{}"); d["history"] = json.loads(d["history"] or "[]"); d["transactions"] = json.loads(d["transactions"] or "[]"); return d
+    d = dict(row)
+    # Portfolio: convert old dict format to new list format
+    raw_port = json.loads(d["portfolio"] or "{}")
+    if isinstance(raw_port, dict):
+        new_list = []
+        for sym, pos in raw_port.items():
+            if isinstance(pos, dict):
+                new_list.append({"sym": sym, "qty": pos.get("qty", 0), "entry": pos.get("entry", 0), "sl": pos.get("sl", 0) or 0, "tp": pos.get("tp", 0) or 0, "side": pos.get("side", "buy") or "buy"})
+        d["portfolio"] = new_list
+    else:
+        d["portfolio"] = raw_port or []
+    d["history"] = json.loads(d["history"] or "[]")
+    d["transactions"] = json.loads(d["transactions"] or "[]")
+    return d
 def save_user(u):
     with lock:
         con = get_con(); cur = con.cursor()
@@ -125,11 +138,15 @@ def get_pnl(user_obj):
     total = 0
     rows = []
     try:
-        portfolio = user_obj.get("portfolio") or {}
-        for sym, pos in portfolio.items():
+        portfolio = user_obj.get("portfolio") or []
+        # Handle old dict just in case
+        if isinstance(portfolio, dict):
+            portfolio = [{"sym": k, **v} for k, v in portfolio.items() if isinstance(v, dict)]
+        for idx, pos in enumerate(portfolio):
             try:
                 if not isinstance(pos, dict):
                     continue
+                sym = pos.get("sym", "")
                 entry = pos.get("entry", 0) or 0
                 qty = pos.get("qty", 0) or 0
                 side = pos.get("side", "buy") or "buy"
@@ -139,9 +156,7 @@ def get_pnl(user_obj):
                 else:
                     pnl = round((cur - entry) * qty * 100, 2)
                 total += pnl
-                sl_val = pos.get("sl", 0) or 0
-                tp_val = pos.get("tp", 0) or 0
-                rows.append({"sym": sym, "qty": qty, "entry": entry, "cur": cur, "pnl": pnl, "sl": sl_val, "tp": tp_val, "side": side})
+                rows.append({"idx": idx, "sym": sym, "qty": qty, "entry": entry, "cur": cur, "pnl": pnl, "sl": pos.get("sl", 0) or 0, "tp": pos.get("tp", 0) or 0, "side": side})
             except:
                 continue
     except:
@@ -163,7 +178,7 @@ HOME = """
 <div class="card"><h3><span id="chartSym">BTCUSD</span> - Candlestick Live 🕯️</h3><div id="myChart" style="height:300px;background:#0f1626;border-radius:12px;"></div><p class="small">Green = up, Red = down. Real 【entity-Binance¦canonical_name=Binance】 candles. KYC: {{ kyc }} - <a href="/settings">Settings</a></p></div>
 <div class="grid"><div class="card"><h3>Markets</h3><div class="price-grid" id="markets"><p>Loading...</p></div></div>
 <div class="card"><h3>Trade - <span id="tradeSym">BTCUSD</span></h3><p>Welcome, <b>{{ full_name }}</b></p>
-<div><b>Positions:</b><br>{% for p in pnl_rows %}{{ p.side.upper() }} {{ p.sym }}: {{ p.qty }} | Entry ${{ p.entry }} -> Now ${{ p.cur }} | PnL ${{ p.pnl }} | SL ${{ p.sl }} TP ${{ p.tp }}<br>{% else %}No positions yet.{% endfor %}<br><b>Total PnL: ${{ total_pnl }}</b></div>
+<div><b>Open Positions ({{ pnl_rows|length }}):</b><br>{% for p in pnl_rows %}{{ p.side.upper() }} {{ p.sym }} #{{ p.idx+1 }}: {{ p.qty }} | Entry ${{ p.entry }} -> Now ${{ p.cur }} | PnL ${{ p.pnl }} | SL ${{ p.sl }} TP ${{ p.tp }} <a href="/close/{{ p.idx }}" style="color:#ef4444;">[Close]</a><br>{% else %}No positions yet.{% endfor %}<br><b>Total PnL: ${{ total_pnl }}</b></div>
 <form method="POST" action="/trade">
   <input type="hidden" name="symbol" id="symbolInput" value="BTCUSD">
   <input name="lot" type="number" step="0.01" value="0.1" required placeholder="Lot size e.g. 0.1">
@@ -284,7 +299,7 @@ def login():
         if obj["password"] == request.form["password"]: obj["password"]=hash_pw(request.form["password"]); save_user(obj)
         session["user"] = request.form["username"]
     return redirect("/")
-def check_user_sl_tp(user_obj=None):
+def check_user_sl_tp(user_obj):
     if user_obj is None:
         return False
     try:
@@ -295,7 +310,47 @@ def check_user_sl_tp(user_obj=None):
 
 def _check_sl_tp_real(user_obj):
     changed = False
-    ...
+    portfolio = user_obj.get("portfolio") or []
+    if isinstance(portfolio, dict):
+        return False
+    keep = []
+    for pos in portfolio:
+        if not isinstance(pos, dict):
+            continue
+        sym = pos.get("sym", "")
+        cur = market.get(sym)
+        if not cur:
+            keep.append(pos)
+            continue
+        sl = pos.get("sl", 0) or 0
+        tp = pos.get("tp", 0) or 0
+        side = pos.get("side", "buy") or "buy"
+        hit = None
+        if side == "sell":
+            if sl > 0 and cur >= sl:
+                hit = "STOP LOSS HIT"
+            elif tp > 0 and cur <= tp:
+                hit = "TAKE PROFIT HIT"
+        else:
+            if sl > 0 and cur <= sl:
+                hit = "STOP LOSS HIT"
+            elif tp > 0 and cur >= tp:
+                hit = "TAKE PROFIT HIT"
+        if hit:
+            qty = pos.get("qty", 0)
+            entry = pos.get("entry", 0)
+            if side == "sell":
+                pnl = round((entry - cur) * qty * 100, 2)
+            else:
+                pnl = round((cur - entry) * qty * 100, 2)
+            user_obj["balance"] += (qty * entry * 100) / 100 + pnl
+            user_obj["history"].append(f"{hit} - AUTO CLOSE {side.upper()} {qty} {sym} @ {cur} | PnL ${pnl} | SL:{sl} TP:{tp}")
+            changed = True
+        else:
+            keep.append(pos)
+    user_obj["portfolio"] = keep
+    return changed
+
 @app.route("/trade", methods=["POST"])
 def trade():
     u = session.get("user")
@@ -321,45 +376,38 @@ def trade():
         save_user(user)
         return redirect("/")
     user["balance"] -= cost
-    old = user["portfolio"].get(symbol)
-    # If no position, open new one in this direction
-    if not old:
-        user["portfolio"][symbol] = {"qty": round(lot, 4), "entry": round(price, 4), "sl": sl, "tp": tp, "side": action}
-        user["history"].append(f"OPEN {action.upper()} {lot} {symbol} @ {price} Lev x{leverage} SL:{sl} TP:{tp}")
-    else:
-        # If same direction, add to it
-        if old.get("side", "buy") == action:
-            new_qty = old["qty"] + lot
-            if new_qty:
-                avg = (old["qty"] * old["entry"] + lot * price) / new_qty
-            else:
-                avg = price
-            old_sl = old.get("sl", 0) or 0
-            old_tp = old.get("tp", 0) or 0
-            new_sl = sl if sl > 0 else old_sl
-            new_tp = tp if tp > 0 else old_tp
-            user["portfolio"][symbol] = {"qty": round(new_qty, 4), "entry": round(avg, 4), "sl": new_sl, "tp": new_tp, "side": action}
-            user["history"].append(f"ADD {action.upper()} {lot} {symbol} @ {price} Lev x{leverage} SL:{new_sl} TP:{new_tp}")
-        else:
-            # Opposite direction - close the old position
-            old_side = old.get("side", "buy")
-            if old_side == "buy":
-                pnl = round((price - old["entry"]) * lot * 100, 2)
-            else:
-                pnl = round((old["entry"] - price) * lot * 100, 2)
-            # Use min lot so we don't over-close
-            close_qty = min(lot, old["qty"])
-            user["balance"] += (close_qty * price * 100) / leverage + pnl
-            # Refund remaining cost difference - keep simple: add pnl
-            user["balance"] += 0
-            remaining = round(old["qty"] - close_qty, 4)
-            if remaining <= 0:
-                del user["portfolio"][symbol]
-                user["history"].append(f"CLOSE {old_side.upper()} {close_qty} {symbol} @ {price} | PnL ${pnl}")
-            else:
-                old["qty"] = remaining
-                user["history"].append(f"PARTIAL CLOSE {old_side.upper()} {close_qty} {symbol} @ {price} | PnL ${pnl}")
+    # ALWAYS open a NEW position - never merge, never auto-close opposite
+    # This allows multiple BUY + SELL on same coin at same time
+    if not isinstance(user.get("portfolio"), list):
+        user["portfolio"] = []
+    user["portfolio"].append({"sym": symbol, "qty": round(lot, 4), "entry": round(price, 4), "sl": sl, "tp": tp, "side": action})
+    user["history"].append(f"OPEN {action.upper()} {lot} {symbol} @ {price} Lev x{leverage} SL:{sl} TP:{tp}")
     save_user(user)
+    return redirect("/")
+
+@app.route("/close/<int:idx>")
+def close_pos(idx):
+    u = session.get("user")
+    if not u:
+        return redirect("/")
+    user = get_user(u)
+    portfolio = user.get("portfolio") or []
+    if 0 <= idx < len(portfolio):
+        pos = portfolio[idx]
+        sym = pos.get("sym", "")
+        cur = market.get(sym, pos.get("entry", 0))
+        qty = pos.get("qty", 0)
+        entry = pos.get("entry", 0)
+        side = pos.get("side", "buy")
+        if side == "sell":
+            pnl = round((entry - cur) * qty * 100, 2)
+        else:
+            pnl = round((cur - entry) * qty * 100, 2)
+        user["balance"] += (qty * entry * 100) / 100 + pnl
+        user["history"].append(f"MANUAL CLOSE {side.upper()} {qty} {sym} @ {cur} | PnL ${pnl}")
+        del portfolio[idx]
+        user["portfolio"] = portfolio
+        save_user(user)
     return redirect("/")
 @app.route("/logout")
 def logout():
